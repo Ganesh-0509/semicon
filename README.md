@@ -13,6 +13,25 @@ pip install -r requirements.txt
 GPU is optional for inference (works on CPU, just slower) but required for
 training in reasonable time.
 
+## Quick usage example
+
+Clone the repo and run inference on the bundled sample images — the
+trained weights (`checkpoints/best.pt`) are already included, so this
+works right away with no training required:
+
+```bash
+git clone https://github.com/Ganesh-0509/semicon.git
+cd semicon
+pip install -r requirements.txt
+
+python src/inference.py NoisyLR/ restored_out/
+```
+
+This restores every `.npy` in `NoisyLR/` (400 sample degraded images) and
+writes the denoised, 2x-upscaled result to `restored_out/`, one `.npy`
+per input, plus a per-run average inference time. Swap `NoisyLR/` for
+any folder of your own degraded `.npy`/`.png`/`.tif`/`.jpg` images.
+
 ## Repository layout
 
 ```
