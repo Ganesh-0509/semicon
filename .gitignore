@@ -1,0 +1,17 @@
+# Large raw datasets (too big for git; provided separately by KLA)
+train/
+train.zip
+test_NoisyLR.zip
+
+# macOS zip-extraction junk
+__MACOSX/
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS/editor
+Thumbs.db
