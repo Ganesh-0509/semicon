@@ -28,7 +28,6 @@ import time
 
 import numpy as np
 import torch
-from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 
 from dataset import make_splits, SubsetRestorationDataset
@@ -103,8 +102,6 @@ def main():
     loss_fn = CombinedLoss(use_perceptual=args.use_perceptual).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
-    amp_enabled = device.type == "cuda"
-    scaler = GradScaler(device.type, enabled=amp_enabled)
 
     print(f"train={len(train_ds)} val={len(val_ds)} device={device} "
           f"params={sum(p.numel() for p in model.parameters())/1e6:.2f}M")
@@ -120,8 +117,6 @@ def main():
         scheduler.load_state_dict(ckpt["scheduler"])
         best_psnr = ckpt["best_psnr"]
         start_epoch = ckpt["epoch"] + 1
-        if "scaler" in ckpt:
-            scaler.load_state_dict(ckpt["scaler"])
         print(f"resumed from {args.resume} at epoch {start_epoch} (best_psnr={best_psnr:.2f}dB)")
 
     for epoch in range(start_epoch, args.epochs):
@@ -132,14 +127,12 @@ def main():
             noisy = batch["noisy_lr"].to(device)
             gt = batch["gt"].to(device)
 
-            with autocast(device.type, enabled=amp_enabled):
-                pred = model(noisy)
-                loss, logs = loss_fn(pred, gt)
+            pred = model(noisy)
+            loss, logs = loss_fn(pred, gt)
 
             optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            loss.backward()
+            optimizer.step()
 
             for k, v in logs.items():
                 running[k] = running.get(k, 0.0) + v
@@ -168,7 +161,6 @@ def main():
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "scheduler": scheduler.state_dict(),
-                "scaler": scaler.state_dict(),
                 "best_psnr": best_psnr,
             }, os.path.join(args.out_dir, "resume.pt"))
 
