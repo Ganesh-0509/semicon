@@ -2,6 +2,10 @@
 train/
 train.zip
 test_NoisyLR.zip
+kaggle_upload/
+kaggle_kernel/
+kaggle_kernel_check/
+kaggle_diag/
 
 # macOS zip-extraction junk
 __MACOSX/
