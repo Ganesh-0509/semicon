@@ -58,6 +58,24 @@ class RestorationDataset(Dataset):
 
         return noisy_lr
 
+    def _random_crop(self, gt, noisy_lr):
+        """Crop_size was accepted but never applied -- random spatial crops
+        are cheap augmentation that multiplies effective training diversity
+        on a fixed 2880-image set, without touching val/eval (train-only)."""
+        if not self.train or self.crop_size is None:
+            return gt, noisy_lr
+
+        h, w = noisy_lr.shape
+        cs = self.crop_size
+        if cs >= h or cs >= w:
+            return gt, noisy_lr
+
+        top = random.randint(0, h - cs)
+        left = random.randint(0, w - cs)
+        noisy_crop = noisy_lr[top:top + cs, left:left + cs]
+        gt_crop = gt[top * 2:(top + cs) * 2, left * 2:(left + cs) * 2]
+        return gt_crop, noisy_crop
+
     def _geometric_augment(self, gt, noisy_lr):
         if not self.train:
             return gt, noisy_lr
@@ -80,6 +98,7 @@ class RestorationDataset(Dataset):
         gt = np.load(gt_path).astype(np.float32)
         noisy_lr = np.load(noisy_path).astype(np.float32)
 
+        gt, noisy_lr = self._random_crop(gt, noisy_lr)
         gt, noisy_lr = self._geometric_augment(gt, noisy_lr)
         noisy_lr = self._augment_extra_degradation(noisy_lr)
 
@@ -106,7 +125,7 @@ def make_splits(gt_dir, noisy_dir, val_fraction=0.1, seed=42):
 class SubsetRestorationDataset(RestorationDataset):
     """Same as RestorationDataset but restricted to a given filename list."""
 
-    def __init__(self, gt_dir, noisy_dir, filenames, train=True, extra_noise_std=0.03):
-        super().__init__(gt_dir, noisy_dir, train=train, extra_noise_std=extra_noise_std)
+    def __init__(self, gt_dir, noisy_dir, filenames, train=True, extra_noise_std=0.03, crop_size=None):
+        super().__init__(gt_dir, noisy_dir, train=train, extra_noise_std=extra_noise_std, crop_size=crop_size)
         keep = set(filenames)
         self.gt_paths = [p for p in self.gt_paths if os.path.basename(p) in keep]

@@ -178,8 +178,9 @@ class NAFNetLiteSR(nn.Module):
         return x
 
 
-def build_model():
-    return NAFNetLiteSR(in_ch=1, out_ch=1, width=32, enc_blocks=(2, 2), middle_blocks=4, dec_blocks=(2, 2))
+def build_model(width=32, enc_blocks=(2, 2), middle_blocks=4, dec_blocks=(2, 2)):
+    return NAFNetLiteSR(in_ch=1, out_ch=1, width=width, enc_blocks=enc_blocks,
+                         middle_blocks=middle_blocks, dec_blocks=dec_blocks)
 
 
 if __name__ == "__main__":

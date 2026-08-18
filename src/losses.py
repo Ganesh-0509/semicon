@@ -77,16 +77,22 @@ class VGGPerceptualLoss(nn.Module):
     """Optional. Replicates the single grayscale channel to 3 channels
     to run through an ImageNet-pretrained VGG16. Requires internet on
     first use (downloads pretrained weights) -- fine on a cloud GPU
-    training environment, not needed at KLA's inference/eval time."""
+    training environment, not needed at KLA's inference/eval time.
 
-    def __init__(self, layer_idx=16):
+    Multi-layer (relu1_2, relu2_2, relu3_3): a single deep layer misses
+    low-level texture that correlates with the LPIPS grading metric,
+    which itself pools over multiple network depths."""
+
+    def __init__(self, layer_idxs=(3, 8, 15), layer_weights=(0.1, 0.1, 1.0)):
         super().__init__()
         from torchvision.models import vgg16, VGG16_Weights
 
-        vgg = vgg16(weights=VGG16_Weights.IMAGENET1K_V1).features[:layer_idx].eval()
+        vgg = vgg16(weights=VGG16_Weights.IMAGENET1K_V1).features[:max(layer_idxs) + 1].eval()
         for p in vgg.parameters():
             p.requires_grad = False
         self.vgg = vgg
+        self.layer_idxs = set(layer_idxs)
+        self.layer_weights = dict(zip(layer_idxs, layer_weights))
         self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
         self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
 
@@ -94,20 +100,46 @@ class VGGPerceptualLoss(nn.Module):
         x = x.repeat(1, 3, 1, 1)
         return (x - self.mean) / self.std
 
+    def _extract(self, x):
+        feats = {}
+        for idx, layer in enumerate(self.vgg):
+            x = layer(x)
+            if idx in self.layer_idxs:
+                feats[idx] = x
+        return feats
+
     def forward(self, pred, target):
-        f_pred = self.vgg(self._prep(pred))
-        f_target = self.vgg(self._prep(target))
-        return F.l1_loss(f_pred, f_target)
+        f_pred = self._extract(self._prep(pred))
+        f_target = self._extract(self._prep(target))
+        loss = 0.0
+        for idx, w in self.layer_weights.items():
+            loss = loss + w * F.l1_loss(f_pred[idx], f_target[idx])
+        return loss
+
+
+class FFTLoss(nn.Module):
+    """L1 loss on the 2D FFT spectrum. Spatial losses (Charbonnier/SSIM)
+    under-penalize missing high-frequency detail; explicit frequency-domain
+    supervision directly targets the fine periodic structure typical of
+    semiconductor inspection images and the detail a 2x-SR head needs to
+    hallucinate correctly."""
+
+    def forward(self, pred, target):
+        pred_fft = torch.fft.rfft2(pred, norm="ortho")
+        target_fft = torch.fft.rfft2(target, norm="ortho")
+        return torch.mean(torch.abs(pred_fft - target_fft))
 
 
 class CombinedLoss(nn.Module):
-    def __init__(self, w_charbonnier=1.0, w_ssim=0.2, w_perceptual=0.05, use_perceptual=True):
+    def __init__(self, w_charbonnier=1.0, w_ssim=0.2, w_perceptual=0.05, w_fft=0.05,
+                 use_perceptual=True, use_fft=True):
         super().__init__()
         self.charbonnier = CharbonnierLoss()
         self.ssim = SSIMLoss()
         self.w_charbonnier = w_charbonnier
         self.w_ssim = w_ssim
         self.w_perceptual = w_perceptual
+        self.w_fft = w_fft
 
         self.perceptual = None
         if use_perceptual:
@@ -116,6 +148,8 @@ class CombinedLoss(nn.Module):
             except Exception as e:
                 print(f"[losses] Perceptual loss disabled (couldn't load VGG weights: {e})")
                 self.perceptual = None
+
+        self.fft = FFTLoss() if use_fft else None
 
     def forward(self, pred, target):
         pred_c = pred.clamp(0, 1)
@@ -131,6 +165,11 @@ class CombinedLoss(nn.Module):
             loss_p = self.perceptual(pred_c, target_c)
             total = total + self.w_perceptual * loss_p
             logs["perceptual"] = loss_p.item()
+
+        if self.fft is not None:
+            loss_f = self.fft(pred_c, target_c)
+            total = total + self.w_fft * loss_f
+            logs["fft"] = loss_f.item()
 
         logs["total"] = total.item()
         return total, logs
