@@ -1,4 +1,19 @@
-torch>=2.1
-torchvision>=0.16
-numpy>=1.24
-Pillow>=10.0
+# Exact versions from the Kaggle T4 GPU environment the final model was
+# trained and evaluated in (captured via `pip freeze`), filtered down to
+# the packages this repo's code actually imports. torch/torchvision carry
+# a "+cu128" CUDA build tag from Kaggle's preinstalled image -- on a
+# machine with a matching CUDA 12.8 setup, install with:
+#   pip install torch==2.10.0+cu128 torchvision==0.25.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+# Otherwise (CPU-only, or a different CUDA version), install the plain
+# versions instead -- inference.py and train.py both auto-select CPU/CUDA:
+#   pip install torch==2.10.0 torchvision==0.25.0
+torch==2.10.0
+torchvision==0.25.0
+numpy==2.0.2
+pillow==11.3.0
+
+# Only needed to compute SSIM/PSNR/LPIPS yourself (see PROGRESS.md's eval
+# cells) -- not required to run src/inference.py or src/train.py.
+lpips==0.1.4
+scikit-image==0.25.2
+scipy==1.16.3

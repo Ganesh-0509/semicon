@@ -116,6 +116,9 @@ arguments.
   [0, 1] (speckle noise pushes values past the true range — this is
   expected and the model is trained on the raw unclipped values
   accordingly).
-- `requirements.txt` reflects a CPU dev environment used for pipeline
-  validation; re-run `pip freeze > requirements.txt` after final training
-  on the actual GPU environment before submission.
+- `requirements.txt` is pinned to the exact package versions from the
+  Kaggle T4 GPU environment the shipped checkpoint was trained and
+  evaluated in, filtered to what this repo's code actually imports (not
+  a raw `pip freeze` of Kaggle's full default image, which carries ~300
+  unrelated packages that would make a fresh install slower and more
+  failure-prone, not more reproducible).
