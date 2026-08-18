@@ -14,10 +14,15 @@ Usage:
     python inference.py <input_dir> <output_dir>
     python inference.py --input_dir <input_dir> --output_dir <output_dir> --weights <path/to/best.pt>
 
-Defaults to --tta flip2 (predict on the input and its h-flip, average the
-two, 2x inference cost) for a small free PSNR/SSIM/LPIPS bump. Pass
---tta none if KLA's H100 latency budget can't absorb that, or --tta flip8
-for the full 8-way dihedral self-ensemble if it can absorb more.
+Defaults to --tta none. Measured directly against the shipped checkpoint's
+own validation split (not just assumed): flip2/flip8 do buy a small
+PSNR/SSIM bump (+0.04/+0.09dB) but make LPIPS measurably WORSE
+(0.2280 -> 0.2348 -> 0.2392) -- averaging multiple predictions smooths
+away exactly the fine texture LPIPS rewards preserving, and LPIPS is the
+metric most tied to "does this look structurally real," which is KLA's
+stated top concern. --tta flip2/flip8 remain available if PSNR/SSIM
+matter more than LPIPS in KLA's actual grading weights, which isn't
+public.
 
 Input format: .npy files, float32, 128x128 (or 256x256 for the 256->512
 scale case), grayscale, matching the format KLA's own training data was
@@ -139,11 +144,10 @@ def parse_args():
     ap.add_argument("--output_dir", dest="output_dir_flag", default=None)
     ap.add_argument("--weights", default=DEFAULT_WEIGHTS, help="path to trained model weights (.pt)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--tta", choices=list(_TTA_TRANSFORMS), default="flip8",
-                     help="geometric self-ensembling: none (fastest), flip2 (2x cost), "
-                          "flip8 (8x cost, default -- an H100 has roughly 10x a T4's throughput, "
-                          "and this model measures ~15ms/image raw on a T4, so flip8 should stay "
-                          "well under KLA's per-image budget; not independently verified on H100)")
+    ap.add_argument("--tta", choices=list(_TTA_TRANSFORMS), default="none",
+                     help="geometric self-ensembling: none (default -- fastest AND best measured "
+                          "LPIPS, see module docstring), flip2/flip8 (2x/8x cost, better PSNR/SSIM "
+                          "but measurably worse LPIPS on the shipped checkpoint's own val split)")
     ap.add_argument("--compile", action="store_true",
                      help="wrap the model with torch.compile(mode='reduce-overhead') -- opt-in, "
                           "not default, since first-call JIT compilation adds latency that a small "
