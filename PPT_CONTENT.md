@@ -1,12 +1,11 @@
 # KLA PS01 — Idea Submission Content
 Team: [FILL IN] | File to save as: `TeamName_KLA_PS01.pdf` | Max 8-9 slides, remove instruction slide
 
-> **Status note (fill this in as you finalize, then delete before export):** Slide 6 below uses the
-> **width=64 model (28.73dB / 0.7835 / 0.2280)** — this is fully trained, verified end-to-end, and
-> already shipped in `checkpoints/best.pt`. A larger experimental model (29.2M-param deep 4-stage
-> network, inspired by Park et al. 2025's SEM-denoising benchmark) is still training as of this
-> writing and trending slightly higher (~28.79dB and still climbing) — if it finishes higher before
-> your deadline, swap its numbers into Slide 6/7 instead. See `PROGRESS.md` for the live comparison.
+> **Status note (delete before export):** Slide 6 below uses the **final shipped model
+> (width=96, 28.83dB / 0.7870 / 0.2237)** — fully trained, verified end-to-end (fresh clone +
+> `pip install` + `inference.py` tested from scratch), and live in `checkpoints/best.pt` on GitHub.
+> An even larger 29.2M-param model reached the same PSNR but required Git LFS to ship (~117MB
+> checkpoint) — deliberately not used, see Slide 5's innovation bullet on this tradeoff.
 
 ---
 
@@ -151,11 +150,19 @@ Degraded input (1x128x128, unclipped float32)
   default as a result — a concrete example of validating an assumption
   against real numbers before trusting it in the graded pipeline.
 - **Capacity scaling was tested empirically, not guessed**: we ran short
-  (5-10 epoch) sanity checks at four model widths before committing GPU
-  hours to any full 100-epoch run, and stopped scaling once the marginal
-  gain per doubling of parameters started shrinking relative to its
-  training-time cost — an evidence-based stopping point rather than an
-  arbitrary one.
+  (5-10 epoch) sanity checks across five model configurations (0.76M up
+  to 29.2M parameters) before committing GPU hours to any full 100-epoch
+  run, comparing the actual marginal gain per size increase rather than
+  assuming bigger is better.
+- **Chose deployability over the single highest benchmark number**: our
+  largest tested model (29.2M params, matching a published SEM-denoising
+  benchmark's architecture) tied our shipped model's PSNR but needed a
+  ~117MB checkpoint — over GitHub's 100MB plain-file limit, requiring Git
+  LFS. Since the evaluation script must run unattended on KLA's grading
+  hardware, and an LFS pointer-file failure there would silently zero the
+  submission, we shipped the model that ties on top-line accuracy *and*
+  is provably safe to deploy, instead of chasing a marginal gain at real
+  operational risk.
 
 ---
 
@@ -166,13 +173,13 @@ split, never trained on):
 
 | Metric | Score |
 |---|---|
-| **PSNR** | **28.73 dB** |
-| **SSIM** | **0.7835** |
-| **LPIPS** | **0.2280** |
+| **PSNR** | **28.83 dB** |
+| **SSIM** | **0.7870** |
+| **LPIPS** | **0.2237** |
 
-*(Verify against whichever run is final at submission time — see the
-status note at the top of this file. `PROGRESS.md` in the repo has the
-full comparison table across every model size we tried.)*
+*(`PROGRESS.md` in the repo has the full comparison table across every
+model size we tried, including the 29.2M-param model that tied on PSNR
+but wasn't shipped — see Slide 5.)*
 
 - **Before / after / ground-truth comparison grid:** [FILL IN — render
   3-4 `.npy` triplets from `sample_outputs/` (restored) against the
@@ -189,12 +196,14 @@ full comparison table across every model size we tried.)*
 - **Hardware used for training:** Kaggle's free-tier NVIDIA Tesla T4 GPU
   (chosen over Colab for its 9-hour background-session limit vs Colab's
   compute-unit throttling).
-- **Training time:** ~4.6 hours for a full 100-epoch run on a T4.
-- **Model size:** 2.98M parameters (~11.4 MB as float32 weights).
-- **Inference time per image:** ~20 ms/image on a Kaggle T4 (single
-  forward pass, no test-time augmentation) — comfortably inside KLA's
-  stated "10 seconds good / 10 minutes bad" bar by roughly 2-3 orders of
-  magnitude. Expect this to be faster still on KLA's H100 grading hardware.
+- **Training time:** ~6.5 hours for a full 100-epoch run on a T4.
+- **Model size:** 6.65M parameters (~26.7 MB as float32 weights).
+- **Inference time per image:** ~20 ms/image measured directly on a
+  Kaggle T4 for our smaller width=64 configuration (single forward pass,
+  no TTA); scaling by parameter count puts the shipped width=96 model at
+  roughly ~40-50 ms/image on the same hardware — comfortably inside
+  KLA's stated "10 seconds good / 10 minutes bad" bar by 2+ orders of
+  magnitude. Expect faster still on KLA's H100 grading hardware.
 
 ---
 

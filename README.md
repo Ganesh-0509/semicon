@@ -42,7 +42,7 @@ src/
   train.py       # training from scratch — EMA, warm-restart LR, capacity flags
   inference.py   # KLA's evaluation entrypoint — this is the file KLA runs, self-ensemble TTA available
 checkpoints/
-  best.pt        # trained weights (highest val PSNR; width=64, 2.98M params)
+  best.pt        # trained weights (highest val PSNR; width=96, 6.65M params)
 sample_outputs/  # this model's restored output on the 400 bundled NoisyLR/ test images
 requirements.txt
 ```
