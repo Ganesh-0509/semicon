@@ -29,6 +29,7 @@ it drops straight into their SSIM/PSNR/LPIPS scorer.
 
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -37,6 +38,39 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from model import build_model
+
+
+def infer_model_config(state_dict):
+    """Recovers width/enc_blocks/middle_blocks/dec_blocks from a checkpoint's
+    tensor shapes and key structure, so this script loads any checkpoint this
+    repo's train.py could have produced (any --width/--enc_blocks/etc.)
+    without needing a matching flag passed in -- required since inference.py
+    is run as-is with no guarantee of extra CLI flags."""
+    width = state_dict["intro.weight"].shape[0]
+
+    def nested_block_counts(prefix):
+        stages = {}
+        for k in state_dict:
+            m = re.match(rf"^{prefix}\.(\d+)\.(\d+)\.", k)
+            if m:
+                stage, block = int(m.group(1)), int(m.group(2))
+                stages.setdefault(stage, set()).add(block)
+        return tuple(len(stages[i]) for i in sorted(stages))
+
+    def flat_block_count(prefix):
+        blocks = set()
+        for k in state_dict:
+            m = re.match(rf"^{prefix}\.(\d+)\.", k)
+            if m:
+                blocks.add(int(m.group(1)))
+        return len(blocks)
+
+    return {
+        "width": width,
+        "enc_blocks": nested_block_counts("encoders"),
+        "middle_blocks": flat_block_count("middle"),
+        "dec_blocks": nested_block_counts("decoders"),
+    }
 
 DEFAULT_WEIGHTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "checkpoints", "best.pt")
 
@@ -125,8 +159,8 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     device = torch.device(device_str)
-    model = build_model().to(device)
     state = torch.load(weights_path, map_location=device)
+    model = build_model(**infer_model_config(state)).to(device)
     model.load_state_dict(state)
     model.eval()
 
