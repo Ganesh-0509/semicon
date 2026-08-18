@@ -101,6 +101,13 @@ def main():
     ap.add_argument("--middle_blocks", type=int, default=4)
     ap.add_argument("--dec_blocks", default="2,2", help="comma-separated decoder block counts")
 
+    ap.add_argument("--amp", action="store_true",
+                     help="mixed-precision training via bfloat16 autocast. Unlike the fp16 AMP "
+                          "that was reverted earlier (GradScaler skipped every step from fp16 "
+                          "overflow on this dataset's out-of-range speckle-noise pixels), bf16 "
+                          "shares fp32's 8-bit exponent range so it doesn't need a GradScaler "
+                          "and doesn't overflow the same way -- see PROGRESS.md for the post-mortem")
+
     args = ap.parse_args()
     args.enc_blocks = tuple(int(x) for x in args.enc_blocks.split(","))
     args.dec_blocks = tuple(int(x) for x in args.dec_blocks.split(","))
@@ -152,7 +159,7 @@ def main():
 
     print(f"train={len(train_ds)} val={len(val_ds)} device={device} "
           f"params={sum(p.numel() for p in model.parameters())/1e6:.2f}M "
-          f"ema={use_ema} crop_size={crop_size} lr_schedule={args.lr_schedule}")
+          f"ema={use_ema} crop_size={crop_size} lr_schedule={args.lr_schedule} amp_bf16={args.amp}")
 
     best_psnr = -1.0
     start_epoch = 0
@@ -180,8 +187,9 @@ def main():
             noisy = batch["noisy_lr"].to(device)
             gt = batch["gt"].to(device)
 
-            pred = model(noisy)
-            loss, logs = loss_fn(pred, gt)
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=args.amp):
+                pred = model(noisy)
+                loss, logs = loss_fn(pred, gt)
 
             optimizer.zero_grad()
             loss.backward()

@@ -130,9 +130,31 @@ class FFTLoss(nn.Module):
         return torch.mean(torch.abs(pred_fft - target_fft))
 
 
+class SobelLoss(nn.Module):
+    """L1 loss between Sobel gradient maps. FFT loss supervises the global
+    frequency spectrum but doesn't specifically guarantee crisp local
+    boundaries; explicit gradient supervision directly penalizes blurred
+    edges -- the semiconductor trace boundaries this whole task cares about."""
+
+    def __init__(self):
+        super().__init__()
+        kx = torch.tensor([[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]]).view(1, 1, 3, 3)
+        ky = torch.tensor([[-1., -2., -1.], [0., 0., 0.], [1., 2., 1.]]).view(1, 1, 3, 3)
+        self.register_buffer("kx", kx)
+        self.register_buffer("ky", ky)
+
+    def _gradients(self, x):
+        return F.conv2d(x, self.kx, padding=1), F.conv2d(x, self.ky, padding=1)
+
+    def forward(self, pred, target):
+        pgx, pgy = self._gradients(pred)
+        tgx, tgy = self._gradients(target)
+        return F.l1_loss(pgx, tgx) + F.l1_loss(pgy, tgy)
+
+
 class CombinedLoss(nn.Module):
-    def __init__(self, w_charbonnier=1.0, w_ssim=0.2, w_perceptual=0.05, w_fft=0.05,
-                 use_perceptual=True, use_fft=True):
+    def __init__(self, w_charbonnier=1.0, w_ssim=0.2, w_perceptual=0.05, w_fft=0.05, w_sobel=0.05,
+                 use_perceptual=True, use_fft=True, use_sobel=True):
         super().__init__()
         self.charbonnier = CharbonnierLoss()
         self.ssim = SSIMLoss()
@@ -140,6 +162,7 @@ class CombinedLoss(nn.Module):
         self.w_ssim = w_ssim
         self.w_perceptual = w_perceptual
         self.w_fft = w_fft
+        self.w_sobel = w_sobel
 
         self.perceptual = None
         if use_perceptual:
@@ -150,6 +173,7 @@ class CombinedLoss(nn.Module):
                 self.perceptual = None
 
         self.fft = FFTLoss() if use_fft else None
+        self.sobel = SobelLoss() if use_sobel else None
 
     def forward(self, pred, target):
         pred_c = pred.clamp(0, 1)
@@ -170,6 +194,11 @@ class CombinedLoss(nn.Module):
             loss_f = self.fft(pred_c, target_c)
             total = total + self.w_fft * loss_f
             logs["fft"] = loss_f.item()
+
+        if self.sobel is not None:
+            loss_sob = self.sobel(pred_c, target_c)
+            total = total + self.w_sobel * loss_sob
+            logs["sobel"] = loss_sob.item()
 
         logs["total"] = total.item()
         return total, logs

@@ -139,8 +139,15 @@ def parse_args():
     ap.add_argument("--output_dir", dest="output_dir_flag", default=None)
     ap.add_argument("--weights", default=DEFAULT_WEIGHTS, help="path to trained model weights (.pt)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--tta", choices=list(_TTA_TRANSFORMS), default="flip2",
-                     help="geometric self-ensembling: none (fastest), flip2 (2x cost, default), flip8 (8x cost)")
+    ap.add_argument("--tta", choices=list(_TTA_TRANSFORMS), default="flip8",
+                     help="geometric self-ensembling: none (fastest), flip2 (2x cost), "
+                          "flip8 (8x cost, default -- an H100 has roughly 10x a T4's throughput, "
+                          "and this model measures ~15ms/image raw on a T4, so flip8 should stay "
+                          "well under KLA's per-image budget; not independently verified on H100)")
+    ap.add_argument("--compile", action="store_true",
+                     help="wrap the model with torch.compile(mode='reduce-overhead') -- opt-in, "
+                          "not default, since first-call JIT compilation adds latency that a small "
+                          "benchmark set may not amortize away; falls back to eager mode if compilation fails")
     args = ap.parse_args()
 
     input_dir = args.input_dir_flag or args.input_dir
@@ -148,11 +155,11 @@ def parse_args():
     if not input_dir or not output_dir:
         ap.error("both an input directory and an output directory are required "
                   "(positionally or via --input_dir/--output_dir)")
-    return input_dir, output_dir, args.weights, args.device, args.tta
+    return input_dir, output_dir, args.weights, args.device, args.tta, args.compile
 
 
 def main():
-    input_dir, output_dir, weights_path, device_str, tta = parse_args()
+    input_dir, output_dir, weights_path, device_str, tta, use_compile = parse_args()
 
     if not os.path.isdir(input_dir):
         raise NotADirectoryError(f"input_dir does not exist: {input_dir}")
@@ -164,6 +171,18 @@ def main():
     model.load_state_dict(state)
     model.eval()
 
+    if use_compile:
+        # torch.compile() itself never raises -- compilation happens lazily on
+        # the first real forward call, so a warm-up call is needed to actually
+        # trigger (and catch) any compilation failure before the main loop.
+        compiled = torch.compile(model, mode="reduce-overhead")
+        try:
+            with torch.no_grad():
+                compiled(torch.zeros(1, 1, 128, 128, device=device))
+            model = compiled
+        except Exception as e:
+            print(f"[inference] torch.compile unavailable, falling back to eager mode: {e}")
+
     files = sorted(
         f for f in os.listdir(input_dir)
         if f.lower().endswith(".npy") or f.lower().endswith(IMAGE_EXTS)
@@ -172,7 +191,7 @@ def main():
         print(f"[inference] WARNING: no .npy/image files found in {input_dir}")
         return
 
-    print(f"[inference] {len(files)} files | device={device} | weights={weights_path} | tta={tta}")
+    print(f"[inference] {len(files)} files | device={device} | weights={weights_path} | tta={tta} | compile={use_compile}")
 
     times = []
     with torch.no_grad():
