@@ -122,12 +122,18 @@ class FFTLoss(nn.Module):
     under-penalize missing high-frequency detail; explicit frequency-domain
     supervision directly targets the fine periodic structure typical of
     semiconductor inspection images and the detail a 2x-SR head needs to
-    hallucinate correctly."""
+    hallucinate correctly.
+
+    torch.fft has no bf16/fp16 CUDA kernel (cuFFT doesn't support it), so
+    this must force fp32 and disable autocast locally -- letting an
+    enclosing bf16 autocast reach here crashes immediately with
+    "Unsupported dtype BFloat16" the first time this runs on a real GPU."""
 
     def forward(self, pred, target):
-        pred_fft = torch.fft.rfft2(pred, norm="ortho")
-        target_fft = torch.fft.rfft2(target, norm="ortho")
-        return torch.mean(torch.abs(pred_fft - target_fft))
+        with torch.autocast(device_type=pred.device.type, enabled=False):
+            pred_fft = torch.fft.rfft2(pred.float(), norm="ortho")
+            target_fft = torch.fft.rfft2(target.float(), norm="ortho")
+            return torch.mean(torch.abs(pred_fft - target_fft))
 
 
 class SobelLoss(nn.Module):
