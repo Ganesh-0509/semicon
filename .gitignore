@@ -6,6 +6,7 @@ kaggle_upload/
 kaggle_kernel/
 kaggle_kernel_check/
 kaggle_diag/
+kaggle_sanity/
 
 # macOS zip-extraction junk
 __MACOSX/
