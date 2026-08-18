@@ -36,13 +36,14 @@ any folder of your own degraded `.npy`/`.png`/`.tif`/`.jpg` images.
 
 ```
 src/
-  dataset.py     # loads paired GT/NoisyLR .npy files, augmentation
-  model.py       # NAFNet-lite restoration network + fused 2x SR head
-  losses.py      # Charbonnier + SSIM + light VGG-perceptual loss
-  train.py       # training from scratch
-  inference.py   # KLA's evaluation entrypoint — this is the file KLA runs
+  dataset.py     # loads paired GT/NoisyLR .npy files, augmentation (incl. random crop)
+  model.py       # NAFNet-lite restoration network + fused 2x SR head, configurable capacity
+  losses.py      # Charbonnier + SSIM + multi-layer VGG perceptual + FFT + Sobel edge loss
+  train.py       # training from scratch — EMA, warm-restart LR, capacity flags
+  inference.py   # KLA's evaluation entrypoint — this is the file KLA runs, self-ensemble TTA available
 checkpoints/
-  best.pt        # trained weights (highest val PSNR)
+  best.pt        # trained weights (highest val PSNR; width=64, 2.98M params)
+sample_outputs/  # this model's restored output on the 400 bundled NoisyLR/ test images
 requirements.txt
 ```
 
@@ -88,14 +89,25 @@ arguments.
   quality-per-FLOP — the problem statement explicitly benchmarks and
   penalizes slow inference on the grading H100.
 - **Loss:** Charbonnier (robust pixel fidelity) + SSIM (matches a grading
-  metric directly) + a small-weight VGG perceptual term (helps LPIPS
-  without a GAN's artifact/ringing risk, which the problem statement
-  explicitly warns against).
+  metric directly) + multi-layer VGG perceptual (relu1_2/relu2_2/relu3_3,
+  helps LPIPS without a GAN's artifact/ringing risk) + FFT-magnitude loss
+  (targets high-frequency detail the spatial losses under-penalize) +
+  Sobel edge loss (explicit edge-boundary supervision).
 - **Generalization:** training data is augmented with randomized *extra*
   speckle/Gaussian noise on top of KLA's provided degradation (not just
-  geometric flips/rotations), so the model doesn't memorize KLA's fixed
-  noise recipe — this targets the explicit out-of-distribution grading
-  criterion.
+  geometric flips/rotations), plus random spatial crops, so the model
+  doesn't memorize KLA's fixed noise recipe — this targets the explicit
+  out-of-distribution grading criterion.
+- **Training stability:** EMA weight averaging and a cosine warm-restart
+  LR schedule, both added after the training curve was observed to
+  plateau on an earlier, smaller configuration.
+- **Inference-time note:** self-ensemble TTA (`--tta flip2`/`flip8`) is
+  available in `inference.py` but **not** the default — measured directly
+  against this checkpoint's own validation split, TTA improves PSNR/SSIM
+  slightly but makes LPIPS measurably *worse* (image averaging smooths
+  away the fine texture LPIPS rewards preserving), so the default
+  (`--tta none`) is the one actually optimized for the metric most tied
+  to "does this look structurally real."
 
 ## Notes for reviewers
 
